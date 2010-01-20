@@ -1,9 +1,9 @@
-
 var Sass = function(){
 	this.allStyles = '';
 	this.globalCSS = '';
 	this.StyleSet = [];
 	this.globalVars = [];
+	this.ParsedCodeBase = [];
 	this.getStyleTags = function(){
 		var tags = document.getElementsByTagName('style');
 		//Copy all styleTag innerHTML to styles variable
@@ -18,73 +18,105 @@ var Sass = function(){
 		this.readCode();
 	}
 	this.readCode = function(){
-		var ifStat = false;
+		var ifStat = [];
 		var ifStatTabCount = 0;
 		var ifStatVal = true;
 		for(var i = 0,len = this.CodeBase.length;i<len;i++){
 			if(this.CodeBase[i]=='\n'){
-				if(ifStat)
-					ifStat = false;
+				if(ifStat.length)
+					ifStat = [];
 				continue;
 			} 
 			
 			var type = this.CodeBase[i].match(/:/)?'style':'selector';
 			
-			var tabs = this.CodeBase[i].replace(/([^\t])\t*/g,'$1').match(/\t/g);//
+			var tabs = this.CodeBase[i].replace(/([^\t])\t*/g,'$1').match(/\t/g);
 			var tabCount = tabs?tabs.length:0;
-			this.CodeBase[i] = this.CodeBase[i].replace(/\n|\t/g,'');
+			this.ParsedCodeBase[i] = [this.CodeBase[i].replace(/\n|\t/g,'')];
+			var p = this.ParsedCodeBase[i];
 			
-			if(this.CodeBase[i].substr(0,1) == '!')
+			if(p[0].substr(0,1) == '!')
 				type = 'var';
-			else if(this.CodeBase[i].substr(0,1) == '@')
+			else if(p[0].substr(0,1) == '@')
 				type = 'instruction';
+			p[1] = type;
+			
+			if(p[1]=='instruction'){//subtypes
+				//if Sub-subtype
+				if(p[0].indexOf('@if')>-1)
+					p[3] = 'if';
+				else if(p[0].indexOf('@else if')>-1)
+					p[3] = 'elseif';
+				else if(p[0].indexOf('@else')>-1)
+					p[3] = 'else';
 				
-			if(ifStat && ifStatTabCount>=tabCount && type !='instruction')
-				ifStat = false;
-			if(ifStat && ifStatVal == true && type != 'instruction'){
-				tabCount = ifStatTabCount;
+				if(p[3])
+					p[2] = 'if';
 			}
-			if(ifStat && ifStatVal == true || (ifStat && ifStatVal == false && type =='instruction')  || !ifStat)			
-			switch(type){
+			var ifPar = false;
+			//Clean If Statements
+			for(iS in ifStat){
+				if(tabCount<=iS && (!p[2]||p[2]!='if'))
+					ifStat[iS] = false;
+				else if(tabCount>iS&&iS>ifPar)
+					ifPar = iS;
+			}
+			
+			var ifCount = 0;
+			for(iS in ifStat){
+				if(ifStat[ifPar])
+					ifCount++;
+			}
+			
+			if(ifPar !== false && ifStat[ifPar].sbool && (!p[2]||p[2]!='if')){
+				tabCount-=ifCount;
+			}
+			
+			if(!ifCount ||
+				(ifPar !== false && ifStat[ifPar].sbool))		
+			switch(p[1]){//type
 				case 'var':
-					var tmpArr = this.CodeBase[i].replace(/ /,'').split('=');
+					var tmpArr = p[0].replace(/ /,'').split('=');
 					if(tmpArr.length==2);
 					this.globalVars[tmpArr[0]] = tmpArr[1];
 				break;
 				case 'instruction':
 					this.checkVars(i);
-					if(this.CodeBase[i].indexOf('@if')>-1){
-						ifStat = true;
-						ifStatTabCount = tabCount;
-						var ifStatVal = eval('('+this.CodeBase[i].substr(3)+')');
-					}else if(this.CodeBase[i].indexOf('@else if')>-1){
-						if(ifStatVal == false){
-							ifStat = true;
-							ifStatTabCount = tabCount;
-							var ifStatVal = eval('('+this.CodeBase[i].substr(8)+')');
-						}else ifStat = false;
-					}else if(this.CodeBase[i].indexOf('@else')>-1){
-						if(ifStatVal == false){
-							ifStat = true;
-							ifStatTabCount = tabCount;
-							var ifStatVal = true;
-						}else ifStat = false;
+					if(p[2]=='if'){
+						switch(p[3]){
+							case 'if':
+								ifStat[tabCount] = {
+									tabCount:tabCount,
+									sbool: eval('('+p[0].substr(3)+')')
+								}
+							break;
+							case 'elseif':
+								if(ifStat[tabCount].sbool==false){
+									ifStat[tabCount].sbool = eval('('+p[0].substr(8)+')')
+								}else ifStat[tabCount] = false;
+							break;
+							case 'else':
+								if(ifStat[tabCount].sbool==false)
+									ifStat[tabCount].sbool = true;
+								else ifStat[tabCount] = false;
+							break;
+						}
 					}
 				break;
 				case 'selector':
 					this.checkVars(i);
 					if(tabCount==0){
-						this.addStyleSet(this.CodeBase[i],0)
+						this.addStyleSet(p[0],0)
 					}else{
 						var parent = this.getParent(tabCount);
-						var childId = this.addStyleSet(this.CodeBase[i],tabCount,parent);
+						var childId = this.addStyleSet(p[0],tabCount,parent);
 						this.addChildToParent(childId,parent);
 					}
 				break;
 				case 'style':
 					this.checkVars(i);
 					var parent = this.getParent(tabCount);
-					this.addStyleToParent(this.CodeBase[i],parent);
+					this.addStyleToParent(p[0],parent);
 				break;
 			}
 		}
@@ -198,12 +230,7 @@ var Sass = function(){
 		return cCode;
 	}
 	this.checkVars = function(id){
-		this.CodeBase[id] = this.CodeBase[id].replace(/\![^ ]*/,this.returnVar);
-		/*if(!m)
-			return;
-		for(var i = 0,len = m.length;i<len;i++){
-			if()
-		}*/
+		this.ParsedCodeBase[id][0] = this.ParsedCodeBase[id][0].replace(/\![^ ]*/,this.returnVar);
 	}
 	this.returnVar = function(varName){
 		return this.globalVars[varName]
