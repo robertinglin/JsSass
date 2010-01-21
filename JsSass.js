@@ -1,3 +1,4 @@
+
 var Sass = function(){
 	this.allStyles = '';
 	this.globalCSS = '';
@@ -102,7 +103,7 @@ var Sass = function(){
 				case 'var':
 					var tmpArr = p.code.replace(/ /,'').split('=');
 					if(tmpArr.length==2);
-					this.globalVars[tmpArr[0]] = tmpArr[1];
+					this.setVar(tmpArr[0],tmpArr[1]);
 				break;
 				case 'instruction':
 					
@@ -112,12 +113,12 @@ var Sass = function(){
 							case 'if':
 								ifStat[tabCount] = {
 									tabCount:tabCount,
-									sbool: eval('('+p.code.substr(3)+')')
+									sbool: eval('('+p.varcode.substr(3)+')')
 								}
 							break;
 							case 'elseif':
 								if(ifStat[tabCount].sbool==false)
-									ifStat[tabCount].sbool = eval('('+p.code.substr(8)+')')
+									ifStat[tabCount].sbool = eval('('+p.varcode.substr(8)+')')
 								else ifStat[tabCount].finished = true;
 							break;
 							case 'else':
@@ -150,17 +151,17 @@ var Sass = function(){
 				case 'selector':
 					this.checkVars(i);
 					if(tabCount==0){
-						this.addStyleSet(p.code,0)
+						this.addStyleSet(p.varcode,0)
 					}else{
 						var parent = this.getParent(tabCount);
-						var childId = this.addStyleSet(p.code,tabCount,parent);
+						var childId = this.addStyleSet(p.varcode,tabCount,parent);
 						this.addChildToParent(childId,parent);
 					}
 				break;
 				case 'style':
 					this.checkVars(i);
 					var parent = this.getParent(tabCount);
-					this.addStyleToParent(p.code,parent);
+					this.addStyleToParent(p.varcode,parent);
 				break;
 			}
 		}
@@ -274,12 +275,25 @@ var Sass = function(){
 		return cCode;
 	}
 	this.checkVars = function(id){
-		this.ParsedCodeBase[id].code = this.ParsedCodeBase[id].code.replace('!=','^%#').replace(/\![^ ]*/g,this.returnVar).replace('^%#','!=');
+		this.ParsedCodeBase[id].varcode = this.ParsedCodeBase[id].code.replace('!=','^%#').replace(/(\#\{)?\![^ ]*/g,this.returnVar).replace('^%#','!=');
 	}
 	this.returnVar = function(varName){
+		varName = varName.replace(/\#\{([^\}]*)}/,'$1')		
 		return this.globalVars[varName]
 	}
 	this.setVar = function(varName,val){
+		if(val.match){
+			var color = false
+			if(val.match(/\#[0-9a-f][0-9a-f][0-9a-f]([0-9a-f][0-9a-f][0-9a-f])?/gi)){
+					//val = val.replace(/\#[0-9a-f][0-9a-f][0-9a-f]([0-9a-f][0-9a-f][0-9a-f])?/gi,this.hexToNum)
+					color = true
+			}
+			if(val.match(/(\-|\+|\*|\/)/)){
+				if(!color)
+				val = eval(val);
+			}
+		}
+		
 		this.globalVars[varName] = val;
 	}
 	this.addStyleTag = function(styleData){
