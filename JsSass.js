@@ -20,7 +20,7 @@ var Sass = function(){
 	this.readCode = function(){
 		var ifStat = [];
 		var ifStatTabCount = 0;
-		var ifStatVal = true;
+		var Loops = [];
 		for(var i = 0,len = this.CodeBase.length;i<len;i++){
 			if(this.CodeBase[i]=='\n'){
 				if(ifStat.length)
@@ -28,37 +28,63 @@ var Sass = function(){
 				continue;
 			} 
 			
-			var type = this.CodeBase[i].match(/:/)?'style':'selector';
-			
-			var tabs = this.CodeBase[i].replace(/([^\t])\t*/g,'$1').match(/\t/g);
-			var tabCount = tabs?tabs.length:0;
-			this.ParsedCodeBase[i] = [this.CodeBase[i].replace(/\n|\t/g,'')];
-			var p = this.ParsedCodeBase[i];
-			
-			if(p[0].substr(0,1) == '!')
-				type = 'var';
-			else if(p[0].substr(0,1) == '@')
-				type = 'instruction';
-			p[1] = type;
-			
-			if(p[1]=='instruction'){//subtypes
-				//if Sub-subtype
-				if(p[0].indexOf('@if')>-1)
-					p[3] = 'if';
-				else if(p[0].indexOf('@else if')>-1)
-					p[3] = 'elseif';
-				else if(p[0].indexOf('@else')>-1)
-					p[3] = 'else';
+			if(!this.ParsedCodeBase[i]){
+				var type = this.CodeBase[i].match(/:/)?'style':'selector';
 				
-				if(p[3])
-					p[2] = 'if';
+				var tabs = this.CodeBase[i].replace(/([^\t])\t*/g,'$1').match(/\t/g);
+				var tabCount = tabs?tabs.length:0;
+				this.ParsedCodeBase[i] = {code:this.CodeBase[i].replace(/\n|\t/g,''),tabCount:tabCount};
+			}else type = this.ParsedCodeBase[i].type;
+			var p = this.ParsedCodeBase[i];
+			tabCount = p.tabCount;
+			if(p.code.substr(0,1) == '!')
+				type = 'var';
+			else if(p.code.substr(0,1) == '@')
+				type = 'instruction';
+			p.type = type;
+			
+			if(p.type=='instruction'){//subtypes
+				//if Sub-subtype
+				if(p.code.indexOf('@if')>-1)
+					p.subsubtype = 'if';
+				else if(p.code.indexOf('@else if')>-1)
+					p.subsubtype = 'elseif';
+				else if(p.code.indexOf('@else')>-1)
+					p.subsubtype = 'else';
+				
+				if(p.subsubtype)
+					p.subtype = 'if';
+				if(p.code.indexOf('@for')>-1 || p.code.indexOf('@while')>-1){
+					p.subtype = 'loop';
+					if(p.code.indexOf('through')>-1)
+						p.subsubtype ='forthrough';
+					else
+						p.subsubtype ='for';
+					if(p.code.indexOf('while')>-1)
+						p.subsubtype ='while';
+				}
+				
+			}
+			if(Loops.length){
+				if(tabCount<=Loops[Loops.length-1].tabCount){
+					var l = Loops[Loops.length-1];
+					this.setVar(l.variable,this.returnVar(l.variable)+1);
+					if(this.returnVar(l.variable)<=l.end){
+						i = l.codeStart;
+						continue;
+					}else{
+						if(Loops.length>1)
+						Loops.slice(0,-1);
+						else Loops = [];
+					}
+				}
 			}
 			var ifPar = false;
 			//Clean If Statements
 			for(iS in ifStat){
-				if(tabCount<=iS && (!p[2]||p[2]!='if'))
+				if(tabCount<=iS && (!p.subtype||p.subtype!='if'))
 					ifStat[iS] = false;
-				else if(tabCount>iS&&iS>ifPar)
+				else if(tabCount>iS&&iS>ifPar&&ifStat[iS])
 					ifPar = iS;
 			}
 			
@@ -67,56 +93,74 @@ var Sass = function(){
 				if(ifStat[ifPar])
 					ifCount++;
 			}
-			
-			if(ifPar !== false && ifStat[ifPar].sbool && (!p[2]||p[2]!='if')){
+			if(ifPar !== false && ifStat[ifPar].sbool && (!p.subtype||p.subtype!='if')){
 				tabCount-=ifCount;
 			}
-			
-			if(!ifCount ||
-				(ifPar !== false && ifStat[ifPar].sbool))		
-			switch(p[1]){//type
+			tabCount -= Loops.length;
+			if(!ifCount || (ifPar !== false && ifStat[ifPar].sbool && !ifStat[ifPar].finished))
+			switch(p.type){//type
 				case 'var':
-					var tmpArr = p[0].replace(/ /,'').split('=');
+					var tmpArr = p.code.replace(/ /,'').split('=');
 					if(tmpArr.length==2);
 					this.globalVars[tmpArr[0]] = tmpArr[1];
 				break;
 				case 'instruction':
-					this.checkVars(i);
-					if(p[2]=='if'){
-						switch(p[3]){
+					
+					if(p.subtype=='if'){
+						this.checkVars(i);
+						switch(p.subsubtype){
 							case 'if':
 								ifStat[tabCount] = {
 									tabCount:tabCount,
-									sbool: eval('('+p[0].substr(3)+')')
+									sbool: eval('('+p.code.substr(3)+')')
 								}
 							break;
 							case 'elseif':
-								if(ifStat[tabCount].sbool==false){
-									ifStat[tabCount].sbool = eval('('+p[0].substr(8)+')')
-								}else ifStat[tabCount] = false;
+								if(ifStat[tabCount].sbool==false)
+									ifStat[tabCount].sbool = eval('('+p.code.substr(8)+')')
+								else ifStat[tabCount].finished = true;
 							break;
 							case 'else':
 								if(ifStat[tabCount].sbool==false)
 									ifStat[tabCount].sbool = true;
-								else ifStat[tabCount] = false;
+								else ifStat[tabCount].finished = true;
 							break;
+						}
+					}
+					if(p.subtype=='loop'){
+						switch(p.subsubtype){
+							case 'for':case 'forthrough':
+								var lid = Loops.length;
+								Loops[lid] = {
+									type:'for',
+									codeStart:i,
+									tabCount:tabCount,
+									variable:p.code.replace(/@for (.*) from.*/,'$1'),
+									start:p.code.replace(/.*from (.*) (through|to).*/,'$1'),
+									end:p.code.replace(/.*(through|to)(.*)/,'$2'),
+									complete:false
+								}
+								if(p.subsubtype=='for'){
+									Loops[lid].end--;
+								}
+								this.globalVars[Loops[lid].variable] = Loops[lid].start*1;
 						}
 					}
 				break;
 				case 'selector':
 					this.checkVars(i);
 					if(tabCount==0){
-						this.addStyleSet(p[0],0)
+						this.addStyleSet(p.code,0)
 					}else{
 						var parent = this.getParent(tabCount);
-						var childId = this.addStyleSet(p[0],tabCount,parent);
+						var childId = this.addStyleSet(p.code,tabCount,parent);
 						this.addChildToParent(childId,parent);
 					}
 				break;
 				case 'style':
 					this.checkVars(i);
 					var parent = this.getParent(tabCount);
-					this.addStyleToParent(p[0],parent);
+					this.addStyleToParent(p.code,parent);
 				break;
 			}
 		}
@@ -230,10 +274,13 @@ var Sass = function(){
 		return cCode;
 	}
 	this.checkVars = function(id){
-		this.ParsedCodeBase[id][0] = this.ParsedCodeBase[id][0].replace(/\![^ ]*/,this.returnVar);
+		this.ParsedCodeBase[id].code = this.ParsedCodeBase[id].code.replace('!=','^%#').replace(/\![^ ]*/g,this.returnVar).replace('^%#','!=');
 	}
 	this.returnVar = function(varName){
 		return this.globalVars[varName]
+	}
+	this.setVar = function(varName,val){
+		this.globalVars[varName] = val;
 	}
 	this.addStyleTag = function(styleData){
 		hAppend = true;
