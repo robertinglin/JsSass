@@ -30,11 +30,11 @@ var Sass = function(){
 			} 
 			
 			if(!this.ParsedCodeBase[i]){
-				var type = this.CodeBase[i].match(/:/)?'style':'selector';
+				var type = this.CodeBase[i].match(/[^\\]:/)?'style':'selector';
 				
 				var tabs = this.CodeBase[i].replace(/([^\t])\t*/g,'$1').match(/\t/g);
 				var tabCount = tabs?tabs.length:0;
-				this.ParsedCodeBase[i] = {code:this.CodeBase[i].replace(/\n|\t/g,''),tabCount:tabCount};
+				this.ParsedCodeBase[i] = {code:this.CodeBase[i].replace(/\n|\t|(\\:)/g,''),tabCount:tabCount};
 			}else type = this.ParsedCodeBase[i].type;
 			var p = this.ParsedCodeBase[i];
 			tabCount = p.tabCount;
